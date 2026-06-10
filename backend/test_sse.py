@@ -2,7 +2,7 @@ import requests
 import json
 import sseclient
 
-def test_chat(prompt, agent_id=None):
+def run_chat(prompt, agent_id=None):
     print(f"\n--- Testing Prompt: {prompt} ---")
     url = "http://localhost:8001/api/chat/completions"
     payload = {
@@ -23,10 +23,10 @@ def test_chat(prompt, agent_id=None):
 
 if __name__ == "__main__":
     # Test 1: Mindmap intent
-    test_chat("Create a mindmap about AI Agents")
+    run_chat("Create a mindmap about AI Agents")
     
     # Test 2: Flow intent
-    test_chat("Create a flowchart for login process")
+    run_chat("Create a flowchart for login process")
     
     # Test 3: Charts intent
-    test_chat("Create a bar chart for sales data")
+    run_chat("Create a bar chart for sales data")
