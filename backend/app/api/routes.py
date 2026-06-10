@@ -416,7 +416,13 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                     else:
                         content = trace_block
 
-            formatted_history.append(AIMessage(content=content))
+            formatted_history.append(AIMessage(
+                content=content,
+                additional_kwargs={
+                    "steps": msg.steps or [],
+                    "agent": msg.agent or ""
+                }
+            ))
 
     # Current Message Construction (same as before)
     current_prompt = request.prompt

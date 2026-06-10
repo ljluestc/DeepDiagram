@@ -1,6 +1,7 @@
 from langchain_core.messages import SystemMessage
 from app.state.state import AgentState
 from app.core.llm import get_configured_llm, get_thinking_instructions
+import re
 
 MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and Knowledge Architect. Your goal is to generate deep, insightful, and visually balanced mindmaps using Markdown (Markmap).
 
@@ -18,6 +19,13 @@ MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and 
 - **MANDATORY ENRICHMENT**: Transform simple keywords into comprehensive knowledge graphs. If a user says "Python", include Standard Library, Web Frameworks, Data Science Stack, Concurrency Models, and Deployment Patterns.
 - **INSIGHTFUL ADDITIONS**: Proactively add "Risks", "Opportunities", or "Best Practices" branches if relevant to the topic.
 - **LANGUAGE**: Match user's input language.
+
+### INCREMENTAL EDITING MODE (CRITICAL)
+When a "CURRENT MINDMAP CODE" block is provided, you MUST treat it as the source of truth and perform incremental edits:
+- Preserve all existing branches and node hierarchy unless the user explicitly asks to delete/restructure them.
+- Apply ONLY the requested changes (add/update/remove specific nodes).
+- Keep unaffected subtrees unchanged (titles, nesting, and ordering).
+- Do NOT regenerate a brand-new map from scratch when edits are requested.
 
 ### OUTPUT FORMAT
 Output your response using these XML-style tags:
@@ -47,6 +55,28 @@ Organized Python ecosystem into core pillars covering language fundamentals, pop
 
 Output ONLY these two tags, nothing else.
 """
+def _extract_code_from_steps(steps) -> str:
+    """Extract latest markdown code from structured execution steps."""
+    if not steps:
+        return ""
+    for step in reversed(steps):
+        if step.get('type') == 'tool_end' and step.get('content'):
+            content = step['content'].strip()
+            if content.startswith("#"):
+                return content
+    return ""
+
+def _extract_code_from_trace_content(content: str) -> str:
+    """Fallback extraction from execution-trace text persisted in assistant content."""
+    if not content or "toolsOutput:" not in content:
+        return ""
+    # Take the last toolsOutput block in case multiple tool calls exist in one trace
+    candidate = content.rsplit("toolsOutput:", 1)[-1].strip()
+    # Remove any trailing meta marker that may be appended on aborted generations
+    candidate = re.sub(r"\n+\[Generation stopped by user/connection lost\]\s*$", "", candidate).strip()
+    if candidate.startswith("#"):
+        return candidate
+    return ""
 
 def extract_current_code_from_messages(messages) -> str:
     """Extract the latest mindmap code from message history."""
@@ -59,11 +89,14 @@ def extract_current_code_from_messages(messages) -> str:
         # Check for AI messages with steps containing tool_end
         if msg.type == "ai" and hasattr(msg, 'additional_kwargs'):
             steps = msg.additional_kwargs.get('steps', [])
-            for step in reversed(steps):
-                if step.get('type') == 'tool_end' and step.get('content'):
-                    content = step['content'].strip()
-                    if content.startswith("#"):
-                        return content
+            code_from_steps = _extract_code_from_steps(steps)
+            if code_from_steps:
+                return code_from_steps
+        # Fallback for older message history where steps were flattened into content trace text
+        if msg.type == "ai" and isinstance(msg.content, str):
+            code_from_trace = _extract_code_from_trace_content(msg.content)
+            if code_from_trace:
+                return code_from_trace
     return ""
 
 async def mindmap_agent_node(state: AgentState):
